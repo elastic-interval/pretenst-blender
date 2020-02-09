@@ -1,0 +1,15 @@
+joints:
+  - index: 0
+    x: 2
+    y: 3
+    z: 9
+  - index: 1
+    x: 4
+    y: 99
+    z: -1
+intervals:
+  - alpha: 0
+    omega: 1
+    strain: 0.122
+    role: ColumnPush
+    elasticity: 3.12
