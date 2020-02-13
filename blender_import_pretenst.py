@@ -113,7 +113,11 @@ def create_interval_node(intv: Interval, prototype_scene: bpy.types.Scene) -> bp
     # Scale
     diameter_coeff = math.sqrt(intv.elasticity) * 200
     diameter_delta = diameter_coeff * (Vector((1, 1, 1)) - track_axis)
-    length_delta = track_axis * intv_arrow.length
+    intv_length = intv_arrow.length
+    if intv.type == "Push":
+        joint_radius = prototype_scene.objects["Joint"].scale.x
+        intv_length -= 2 * joint_radius
+    length_delta = track_axis * intv_length
     scale_delta = diameter_delta + length_delta
     intv_node.scale.x *= scale_delta.x
     intv_node.scale.y *= scale_delta.y
@@ -178,7 +182,6 @@ def do_import_pretenst_csv(self: ImportPretenst, context):
         collection.objects.link(joint_node)
 
 
-# Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
     self.layout.operator(ImportPretenst.bl_idname, text="Pretenst CSV")
 
@@ -194,7 +197,7 @@ def unregister():
 
 
 if __name__ == "__main__":
-    register()
+    bpy.utils.register_class(ImportPretenst)
 
     # test call
     bpy.ops.pretenst.do_import('INVOKE_DEFAULT')
