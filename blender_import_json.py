@@ -1,3 +1,6 @@
+# Copyright (c) 2020. Beautiful Code BV, Rotterdam, Netherlands
+# Licensed under GNU GENERAL PUBLIC LICENSE Version 3.
+
 import json
 import math
 from dataclasses import dataclass
@@ -14,7 +17,7 @@ from bpy_extras.io_utils import ImportHelper
 class Joint:
     index: int
     co: Vector
-
+    radius: float = 1
 
 @dataclass
 class Interval:
@@ -22,20 +25,23 @@ class Interval:
     alpha: Joint
     omega: Joint
     type: str
+    isPush: bool
     strain: float
     stiffness: float
     linear_density: float
     role: str
+    idealLength: float
     length: float
-
+    radius: float
+    jointRadius: float
 
 def track_axis_to_vector(track_axis: str) -> Vector:
     if track_axis == "POS_X":
         return Vector((1, 0, 0))
     if track_axis == "POS_Y":
-        return Vector((0, 1, 0))
-    if track_axis == "POS_Z":
         return Vector((0, 0, 1))
+    if track_axis == "POS_Z":
+        return Vector((0, 1, 0))
     raise ValueError(f"Cannot convert tracking axis {track_axis}")
 
 
@@ -43,7 +49,9 @@ def create_joint_node(jt: Joint, prototype_scene: bpy.types.Scene) -> bpy.types.
     joint_node = prototype_scene.objects["Joint"].copy()
     joint_node.name = f"J{jt.index}"
     joint_node.location = jt.co
-
+    joint_node.scale.x *= jt.radius
+    joint_node.scale.y *= jt.radius
+    joint_node.scale.z *= jt.radius
     return joint_node
 
 
@@ -52,7 +60,7 @@ def create_interval_node(intv: Interval, prototype_scene: bpy.types.Scene) -> bp
     omega = intv.omega
 
     intv_node = prototype_scene.objects[intv.type].copy()
-    intv_node.name = f"I{intv.index} {intv.role} (J{alpha.index} ~ J{omega.index})"
+    intv_node.name = f"I{intv.index} {intv.role}"
 
     intv_arrow = omega.co - alpha.co
     track_axis = track_axis_to_vector(intv_node.track_axis)
@@ -66,13 +74,14 @@ def create_interval_node(intv: Interval, prototype_scene: bpy.types.Scene) -> bp
     intv_node.rotation_quaternion = rotation
 
     # Scale
-    diameter_coeff = math.sqrt(intv.stiffness) * 200
-    diameter_delta = diameter_coeff * (Vector((1, 1, 1)) - track_axis)
-    length_delta = track_axis * intv_arrow.length
-    scale_delta = diameter_delta + length_delta
-    intv_node.scale.x *= scale_delta.x
-    intv_node.scale.y *= scale_delta.y
-    intv_node.scale.z *= scale_delta.z
+    if intv.isPush:
+        intv_node.scale.x *= intv.radius
+        intv_node.scale.y *= intv.radius
+        intv_node.scale.z *= intv.length/2
+    else:
+        intv_node.scale.x *= intv.radius/2
+        intv_node.scale.y *= intv.radius/2
+        intv_node.scale.z *= intv.length/2
 
     return intv_node
 
@@ -96,19 +105,29 @@ def joint_dict_to_dataclass(joint_dict):
         co=Vector((x, y, z)),
     )
 
-
 def interval_dict_to_dataclass(index, interval_dict, joints_dict):
+    jointRadius = interval_dict['jointRadius']
     joints = interval_dict['joints']
+    alpha = joints_dict[joints[0]]
+    omega = joints_dict[joints[1]]
+    isPush = interval_dict['isPush']
+    if (isPush):
+        alpha.radius = jointRadius
+        omega.radius = jointRadius
     return Interval(
         index=index,
-        alpha=joints_dict[joints[0]],
-        omega=joints_dict[joints[1]],
+        alpha=alpha,
+        omega=omega,
+        isPush=isPush,
         type=interval_dict['type'],
         strain=interval_dict['strain'],
         stiffness=interval_dict['stiffness'],
         linear_density=interval_dict['linearDensity'],
         role=interval_dict['role'],
+        idealLength=interval_dict['idealLength'],
         length=interval_dict['length'],
+        radius=interval_dict['radius'],
+        jointRadius=jointRadius,
     )
 
 
@@ -126,7 +145,6 @@ def load_pretenst_from_json(filepath):
     ]
     return intervals, joints
 
-
 class ImportPretenst(Operator, ImportHelper):
     """Import a directory of Pretenst JSON files describing a tensegrity structure"""
     bl_idname = "pretenst.do_import"
@@ -140,7 +158,7 @@ class ImportPretenst(Operator, ImportHelper):
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
-    
+
     def execute(self, context):
         do_import_pretenst_json(self, context)
         return {'FINISHED'}
@@ -162,7 +180,7 @@ def unregister():
 
 def do_import_pretenst_json(self: ImportPretenst, context):
     intervals, joints = load_pretenst_from_json(self.filepath)
-    self.report({'INFO'}, f"Pretenst: Loaded {len(intervals)} intervals and {len(joints)} joints from {self.filepath}.")
+    self.report({'INFO'}, f"Pretenst: Loaded {len(intervals)} intervals from {self.filepath}.")
     _, pretenst_name = path.split(self.filepath)
     collection_name = f"Pretenst: {pretenst_name}"
     collection = bpy.data.collections.new(name=collection_name)
